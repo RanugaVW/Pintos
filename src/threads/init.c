@@ -133,122 +133,13 @@ pintos_init (void)
     /* Run actions specified on kernel command line. */
     run_actions (argv);
   } else {
-    // TODO: no command line passed to kernel. Run interactively
-	shell(); 
+    // TODO: no command line passed to kernel. Run interactively 
   }
 
   /* Finish up. */
   shutdown ();
   thread_exit ();
 }
-
-void shell(void) {
-    char cmd[100];
-
-    printf("\n\n***** Welcome to Pintos Shell *****\n");
-    printf("Type 'help' to see available commands.\n\n");
-
-    while (true) {
-        printf("CS2042> ");
-        console_getline(cmd);  // Get user input
-
-        process_command(cmd);  // Process the command
-    }
-}
-
-void process_command(char *input) {
-    if (strcmp(input, "whoami") == 0) {
-        whoami();
-    } else if (strcmp(input, "shutdown") == 0) {
-        shutdown();
-    } else if (strcmp(input, "time") == 0) {
-        time();
-    } else if (strcmp(input, "ram") == 0) {
-        ram();
-    } else if (strcmp(input, "thread") == 0) {
-        thread_info();
-    } else if (strcmp(input, "priority") == 0) {
-        priority();
-    } else if (strcmp(input, "exit") == 0) {
-        exit_shell();
-    } else if (strcmp(input, "help") == 0) {
-        printf("Available commands:\n");
-        printf("  whoami    - Show your name and index\n");
-        printf("  shutdown  - Exit Pintos\n");
-        printf("  time      - Show Unix time\n");
-        printf("  ram       - Show available RAM\n");
-        printf("  thread    - Show thread stats\n");
-        printf("  priority  - Show current thread priority\n");
-        printf("  exit      - Exit shell\n");
-    } else {
-        printf("Unknown command: %s\n", input);
-    }
-}
-
-
-void whoami(void) {
-    printf("Ranuga Weerasekara - 230694J\n");
-}
-
-void time(void) {
-    int64_t seconds = timer_ticks() / TIMER_FREQ;
-    printf("Time since Unix epoch: %lld seconds\n", seconds);
-}
-
-void ram(void) {
-    printf("Available RAM: %d bytes\n", init_ram_pages * PGSIZE);
-}
-
-void thread_info(void) {
-    printf("Thread count: %d\n", thread_current()->tid);
-}
-
-void priority(void) {
-    printf("Current thread priority: %d\n", thread_get_priority());
-}
-
-void exit_shell(void) {
-    printf("Exiting interactive shell...\n");
-    shutdown();
-    thread_exit();
-}
-
-void console_getline(char *input) {
-    char c;
-    int i = 0;
-
-    while (true) {
-        c = input_getc();  // Get a character from input
-
-        // If Enter key or Return key is pressed, stop reading input
-        if (c == '\n' || c == '\r') {
-            break; // End of line
-        }
-
-        // Handle Backspace (remove the last character)
-        if (c == '\b') {
-            if (i > 0) {
-                i--;  // Move the index back to the previous character
-                putchar('\b');  // Print backspace to the console
-                putchar(' ');   // Print space to overwrite the character
-                putchar('\b');  // Print backspace again to move the cursor back
-            }
-        } else {
-            if (i < 99) {
-                input[i++] = c;  // Store character in input array
-                putchar(c);      // Echo the character to the console
-            }
-        }
-    }
-
-    input[i] = '\0';  // Null-terminate the string after input is received
-    putchar('\n');    // Print a new line after input is received
-}
-
-
-
-
-
 
 /* Clear the "BSS", a segment that should be initialized to
    zeros.  It isn't actually stored on disk or zeroed by the

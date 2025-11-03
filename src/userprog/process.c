@@ -20,6 +20,7 @@
 
 static thread_func start_process NO_RETURN;
 static bool load (const char *cmdline, void (**eip) (void), void **esp);
+static void setup_stack_with_args(void **esp, int argc, char **argv);
 
 /* Starts a new thread running a user program loaded from
    FILENAME.  The new thread may be scheduled (and may even exit)
@@ -50,30 +51,41 @@ process_execute (const char *file_name)
 static void
 start_process (void *file_name_)
 {
-  char *file_name = file_name_;
+  char *cmdline = file_name_;
   struct intr_frame if_;
   bool success;
 
+  /* Parse command line into arguments. */
+  char *argv[32];
+  int argc = 0;
+  char *token, *save_ptr;
+  token = strtok_r(cmdline, " ", &save_ptr);
+  if (token != NULL) {
+    argv[argc++] = token; // argv[0] is executable name
+    while ((token = strtok_r(NULL, " ", &save_ptr)) != NULL) {
+      argv[argc++] = token; // remaining are arguments
+    }
+  }
+
   /* Initialize interrupt frame and load executable. */
-  memset (&if_, 0, sizeof if_);
+  memset(&if_, 0, sizeof if_);
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  success = load (file_name, &if_.eip, &if_.esp);
+  printf("DEBUG: Executable to load: '%s'\n", argv[0]);
+  success = load(argv[0], &if_.eip, &if_.esp); // only executable name
 
-  /* If load failed, quit. */
-  palloc_free_page (file_name);
-  if (!success) 
-    thread_exit ();
+  /* Set up stack with arguments. */
+  if (success) {
+    setup_stack_with_args(&if_.esp, argc, argv);
+  }
 
-  /* Start the user process by simulating a return from an
-     interrupt, implemented by intr_exit (in
-     threads/intr-stubs.S).  Because intr_exit takes all of its
-     arguments on the stack in the form of a `struct intr_frame',
-     we just point the stack pointer (%esp) to our stack frame
-     and jump to it. */
-  asm volatile ("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
-  NOT_REACHED ();
+  palloc_free_page(cmdline);
+  if (!success)
+    thread_exit();
+
+  asm volatile("movl %0, %%esp; jmp intr_exit" : : "g" (&if_) : "memory");
+  NOT_REACHED();
 }
 
 /* Waits for thread TID to die and returns its exit status.  If
@@ -85,35 +97,42 @@ start_process (void *file_name_)
 
    This function will be implemented in problem 2-2.  For now, it
    does nothing. */
-int
-process_wait (tid_t child_tid UNUSED) 
+int process_wait (tid_t child_tid UNUSED) 
 {
-  return -1;
+  while (true) {
+    timer_msleep(1000); // Sleep to avoid busy-waiting
+  }
 }
 
 /* Free the current process's resources. */
 void
 process_exit (void)
 {
-  struct thread *cur = thread_current ();
+  struct thread *cur = thread_current();
   uint32_t *pd;
+
+  // This is for Printing process termination message as required
+  // Only for the user processes, not the kernel threads or halt
+  if (cur->name && cur->exit_status != -999) {
+    // Print only the program name (omit arguments)
+    char prog_name[16];
+    int i = 0;
+    while (cur->name[i] && cur->name[i] != ' ' && i < 15) {
+      prog_name[i] = cur->name[i];
+      i++;
+    }
+    prog_name[i] = '\0';
+    printf("%s: exit(%d)\n", prog_name, cur->exit_status);
+  }
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
-  if (pd != NULL) 
-    {
-      /* Correct ordering here is crucial.  We must set
-         cur->pagedir to NULL before switching page directories,
-         so that a timer interrupt can't switch back to the
-         process page directory.  We must activate the base page
-         directory before destroying the process's page
-         directory, or our active page directory will be one
-         that's been freed (and cleared). */
-      cur->pagedir = NULL;
-      pagedir_activate (NULL);
-      pagedir_destroy (pd);
-    }
+  if (pd != NULL) {
+    cur->pagedir = NULL;
+    pagedir_activate(NULL);
+    pagedir_destroy(pd);
+  }
 }
 
 /* Sets up the CPU for running user code in the current
@@ -196,6 +215,39 @@ struct Elf32_Phdr
 #define PF_R 4          /* Readable. */
 
 static bool setup_stack (void **esp);
+static void setup_stack_with_args(void **esp, int argc, char **argv);
+/* Sets up the user stack with argc/argv and argument strings. */
+
+static void setup_stack_with_args(void **esp, int argc, char **argv) {
+  char *arg_ptrs[32];
+  int i;
+  for (i = argc - 1; i >= 0; i--) {
+    *esp -= strlen(argv[i]) + 1;
+    memcpy(*esp, argv[i], strlen(argv[i]) + 1);
+    arg_ptrs[i] = *esp;
+  }
+  // Word align
+  uintptr_t align = (uintptr_t)*esp % 4;
+  if (align) {
+    *esp -= align;
+    memset(*esp, 0, align);
+  }
+  // Push argv pointers
+  *esp -= sizeof(char *);
+  *(uintptr_t *)*esp = 0;
+  for (i = argc - 1; i >= 0; i--) {
+    *esp -= sizeof(char *);
+    *(uintptr_t *)*esp = (uintptr_t)arg_ptrs[i];
+  }
+  char **argv_on_stack = (char **)*esp;
+  *esp -= sizeof(char **);
+  *(uintptr_t *)*esp = (uintptr_t)argv_on_stack;
+  *esp -= sizeof(int);
+  *(int *)*esp = argc;
+  *esp -= sizeof(void *);
+  *(uintptr_t *)*esp = 0; // Fake return address
+}
+
 static bool validate_segment (const struct Elf32_Phdr *, struct file *);
 static bool load_segment (struct file *file, off_t ofs, uint8_t *upage,
                           uint32_t read_bytes, uint32_t zero_bytes,
@@ -437,7 +489,7 @@ setup_stack (void **esp)
     {
       success = install_page (((uint8_t *) PHYS_BASE) - PGSIZE, kpage, true);
       if (success)
-        *esp = PHYS_BASE;
+        *esp = PHYS_BASE - 12;
       else
         palloc_free_page (kpage);
     }

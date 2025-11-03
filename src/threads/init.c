@@ -88,6 +88,7 @@ pintos_init (void)
   /* Initialize ourselves as a thread so we can use locks,
      then enable console locking. */
   thread_init ();
+
   console_init ();  
 
   /* Greet user. */
@@ -151,7 +152,6 @@ void shell(void) {
     while (true) {
         printf("CS2042> ");
         console_getline(cmd);  // Get user input
-
         process_command(cmd);  // Process the command
     }
 }
@@ -211,38 +211,6 @@ void exit_shell(void) {
     printf("Exiting interactive shell...\n");
     shutdown();
     thread_exit();
-}
-
-void console_getline(char *input) {
-    char c;
-    int i = 0;
-
-    while (true) {
-        c = input_getc();  // Get a character from input
-
-        // If Enter key or Return key is pressed, stop reading input
-        if (c == '\n' || c == '\r') {
-            break; // End of line
-        }
-
-        // Handle Backspace (remove the last character)
-        if (c == '\b') {
-            if (i > 0) {
-                i--;  // Move the index back to the previous character
-                putchar('\b');  // Print backspace to the console
-                putchar(' ');   // Print space to overwrite the character
-                putchar('\b');  // Print backspace again to move the cursor back
-            }
-        } else {
-            if (i < 99) {
-                input[i++] = c;  // Store character in input array
-                putchar(c);      // Echo the character to the console
-            }
-        }
-    }
-
-    input[i] = '\0';  // Null-terminate the string after input is received
-    putchar('\n');    // Print a new line after input is received
 }
 
 

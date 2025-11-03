@@ -4,6 +4,8 @@
 
 #include <stdio.h>
 #include <syscall.h>
+#include <stdbool.h>
+#include <stdlib.h>
 
 int
 main (int argc, char *argv[]) 

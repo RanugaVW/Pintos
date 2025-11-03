@@ -1,0 +1,6 @@
+{
+    "files.associations": {
+        "*.inc": "c",
+        "serial.h": "c"
+    }
+}

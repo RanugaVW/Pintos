@@ -98,6 +98,10 @@ struct thread
     uint32_t *pagedir;                  /* Page directory. */
 #endif
 
+#ifdef USERPROG
+   int exit_status;                    /* Exit status for user process. */
+#endif
+
     /* Owned by thread.c. */
     unsigned magic;                     /* Detects stack overflow. */
   };

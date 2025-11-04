@@ -2,6 +2,7 @@
 #include <debug.h>
 #include <stdio.h>
 #include <string.h>
+#include "threads/synch.h"
 #include "filesys/file.h"
 #include "filesys/free-map.h"
 #include "filesys/inode.h"
@@ -9,6 +10,9 @@
 
 /* Partition that contains the file system. */
 struct block *fs_device;
+
+/* Global lock for file system synchronization. */
+struct lock fs_lock;
 
 static void do_format (void);
 
@@ -21,6 +25,7 @@ filesys_init (bool format)
   if (fs_device == NULL)
     PANIC ("No file system device found, can't initialize file system.");
 
+  lock_init (&fs_lock);
   inode_init ();
   free_map_init ();
 

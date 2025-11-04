@@ -160,6 +160,12 @@ process_exit (void)
   /* Signal the parent that this process is exiting. */
   sema_up(&cur->exit_sema);
 
+  /* Close executable file (write was denied during execution). */
+  if (cur->exec_file != NULL) {
+    file_close(cur->exec_file);
+    cur->exec_file = NULL;
+  }
+
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */
   pd = cur->pagedir;
@@ -316,6 +322,9 @@ load (const char *file_name, void (**eip) (void), void **esp)
       goto done; 
     }
 
+  /* Deny write to executable file while process is running. */
+  file_deny_write (file);
+
   /* Read and verify executable header. */
   if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
       || memcmp (ehdr.e_ident, "\177ELF\1\1\1", 7)
@@ -399,7 +408,12 @@ load (const char *file_name, void (**eip) (void), void **esp)
 
  done:
   /* We arrive here whether the load is successful or not. */
-  file_close (file);
+  /* If load was successful, keep file open with write denied. */
+  if (success) {
+    thread_current()->exec_file = file;
+  } else {
+    file_close (file);
+  }
   return success;
 }
 

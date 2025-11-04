@@ -1,6 +1,7 @@
 #include "filesys/file.h"
 #include <debug.h>
 #include "filesys/inode.h"
+#include "filesys/filesys.h"
 #include "threads/malloc.h"
 
 /* An open file. */
@@ -68,7 +69,8 @@ file_get_inode (struct file *file)
 off_t
 file_read (struct file *file, void *buffer, off_t size) 
 {
-  off_t bytes_read = inode_read_at (file->inode, buffer, size, file->pos);
+  off_t bytes_read;
+  bytes_read = inode_read_at (file->inode, buffer, size, file->pos);
   file->pos += bytes_read;
   return bytes_read;
 }
@@ -94,7 +96,8 @@ file_read_at (struct file *file, void *buffer, off_t size, off_t file_ofs)
 off_t
 file_write (struct file *file, const void *buffer, off_t size) 
 {
-  off_t bytes_written = inode_write_at (file->inode, buffer, size, file->pos);
+  off_t bytes_written;
+  bytes_written = inode_write_at (file->inode, buffer, size, file->pos);
   file->pos += bytes_written;
   return bytes_written;
 }

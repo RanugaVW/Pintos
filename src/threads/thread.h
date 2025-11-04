@@ -107,6 +107,7 @@ struct thread
    bool waited;                        /* True if parent has waited on this child's exit. */
    struct semaphore load_sema;         /* Semaphore for parent to wait on child load completion. */
    bool load_success;                  /* True if child successfully loaded executable. */
+   struct file *exec_file;             /* Pointer to executable file (kept open to prevent writes). */
 #endif
 
     /* Owned by thread.c. */

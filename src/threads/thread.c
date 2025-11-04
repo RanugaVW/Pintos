@@ -487,6 +487,7 @@ init_thread (struct thread *t, const char *name, int priority)
   t->exit_status = 0;  /* Initialize exit status to 0 */
   t->waited = false;  /* Thread hasn't been waited on yet */
   t->load_success = false;  /* Thread hasn't successfully loaded yet */
+  t->exec_file = NULL;  /* No executable file yet */
   
   /* Initialize file descriptor table */
   int i;

@@ -106,6 +106,22 @@ static void syscall_handler (struct intr_frame *f UNUSED)
       }
       filename[255] = '\0';
       
+      // Extract just the executable name (first token) for file validation
+      char exec_name[256];
+      int j = 0;
+      for (i = 0; i < 256 && filename[i] != '\0' && filename[i] != ' '; i++) {
+        exec_name[i] = filename[i];
+      }
+      exec_name[i] = '\0';
+      
+      // Validate that file exists before creating thread
+      struct file *test_file = filesys_open(exec_name);
+      if (test_file == NULL) {
+        f->eax = -1;
+        break;
+      }
+      file_close(test_file);
+      
       // Execute the program
       tid_t child_tid = process_execute(filename);
       f->eax = child_tid;
@@ -280,26 +296,35 @@ static void syscall_handler (struct intr_frame *f UNUSED)
           f->eax = -1;
         }
       } else {
-        // Read from file into local buffer, then copy to user space
+        // Read from file into local buffer in chunks, then copy to user space
         char local_buf[512];
-        unsigned to_read = size > 512 ? 512 : size;
-        off_t bytes_read = file_read(file_ptr, local_buf, to_read);
+        off_t bytes_read_total = 0;
+        unsigned offset = 0;
         
-        if (bytes_read > 0) {
+        while (offset < size) {
+          unsigned to_read = size - offset > 512 ? 512 : size - offset;
+          off_t bytes_read = file_read(file_ptr, local_buf, to_read);
+          
+          if (bytes_read <= 0) {
+            break;  // End of file or error
+          }
+          
           // Copy to user space
           for (int i = 0; i < bytes_read; i++) {
-            if (!put_user((uint8_t *)buffer_ptr + i, local_buf[i])) {
-              f->eax = -1;
+            if (!put_user((uint8_t *)buffer_ptr + offset + i, local_buf[i])) {
+              f->eax = bytes_read_total;
               return;
             }
           }
+          
+          bytes_read_total += bytes_read;
+          offset += bytes_read;
         }
-        f->eax = bytes_read;
+        f->eax = bytes_read_total;
       }
       break;
     }
     case SYS_WRITE: {
-      // This was already handled above, but let's keep it here for clarity
       int fd = get_user_word((uint32_t *)((uint8_t *)f->esp + 4));
       uint32_t buf_ptr = get_user_word((uint32_t *)((uint8_t *)f->esp + 8));
       unsigned size = get_user_word((uint32_t *)((uint8_t *)f->esp + 12));
@@ -317,38 +342,56 @@ static void syscall_handler (struct intr_frame *f UNUSED)
       }
       
       if (fd == 1) {
-        // stdout
+        // stdout - write full buffer
+        unsigned bytes_written = 0;
         char local_buf[256];
-        unsigned to_write = size > 256 ? 256 : size;
-        for (unsigned i = 0; i < to_write; i++) {
-          int byte = get_user((uint8_t *)(buf_ptr + i));
-          if (byte == -1) {
-            f->eax = -1;
-            return;
+        unsigned offset = 0;
+        
+        while (offset < size) {
+          unsigned to_copy = size - offset > 256 ? 256 : size - offset;
+          for (unsigned i = 0; i < to_copy; i++) {
+            int byte = get_user((uint8_t *)(buf_ptr + offset + i));
+            if (byte == -1) {
+              f->eax = bytes_written;
+              return;
+            }
+            local_buf[i] = (char)byte;
           }
-          local_buf[i] = (char)byte;
+          putbuf(local_buf, to_copy);
+          bytes_written += to_copy;
+          offset += to_copy;
         }
-        putbuf(local_buf, to_write);
-        f->eax = to_write;
+        f->eax = bytes_written;
       } else if (fd >= 2 && fd < 128) {
-        // File descriptor
+        // File descriptor - write full buffer
         struct thread *cur = thread_current();
         struct file *file_ptr = cur->fd_table[fd];
         
         if (file_ptr == NULL) {
           f->eax = -1;
         } else {
+          unsigned bytes_written = 0;
           char local_buf[256];
-          unsigned to_write = size > 256 ? 256 : size;
-          for (unsigned i = 0; i < to_write; i++) {
-            int byte = get_user((uint8_t *)(buf_ptr + i));
-            if (byte == -1) {
-              f->eax = -1;
-              return;
+          unsigned offset = 0;
+          
+          while (offset < size) {
+            unsigned to_copy = size - offset > 256 ? 256 : size - offset;
+            for (unsigned i = 0; i < to_copy; i++) {
+              int byte = get_user((uint8_t *)(buf_ptr + offset + i));
+              if (byte == -1) {
+                f->eax = bytes_written;
+                return;
+              }
+              local_buf[i] = (char)byte;
             }
-            local_buf[i] = (char)byte;
+            off_t written = file_write(file_ptr, local_buf, to_copy);
+            if (written < (off_t)to_copy) {
+              bytes_written += written;
+              break;  // Stop if we can't write more
+            }
+            bytes_written += written;
+            offset += written;
           }
-          off_t bytes_written = file_write(file_ptr, local_buf, to_write);
           f->eax = bytes_written;
         }
       } else {

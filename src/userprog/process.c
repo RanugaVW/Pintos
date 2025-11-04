@@ -15,6 +15,7 @@
 #include "threads/init.h"
 #include "threads/interrupt.h"
 #include "threads/palloc.h"
+#include "threads/synch.h"
 #include "threads/thread.h"
 #include "threads/vaddr.h"
 
@@ -41,8 +42,17 @@ process_execute (const char *file_name)
 
   /* Create a new thread to execute FILE_NAME. */
   tid = thread_create (file_name, PRI_DEFAULT, start_process, fn_copy);
-  if (tid == TID_ERROR)
-    palloc_free_page (fn_copy); 
+  if (tid == TID_ERROR) {
+    palloc_free_page (fn_copy);
+    return TID_ERROR;
+  }
+  
+  /* Set the parent_tid for the child thread. */
+  struct thread *child = thread_get_by_tid(tid);
+  if (child != NULL) {
+    child->parent_tid = thread_current()->tid;
+  }
+  
   return tid;
 }
 
@@ -72,7 +82,6 @@ start_process (void *file_name_)
   if_.gs = if_.fs = if_.es = if_.ds = if_.ss = SEL_UDSEG;
   if_.cs = SEL_UCSEG;
   if_.eflags = FLAG_IF | FLAG_MBS;
-  printf("DEBUG: Executable to load: '%s'\n", argv[0]);
   success = load(argv[0], &if_.eip, &if_.esp); // only executable name
 
   /* Set up stack with arguments. */
@@ -99,9 +108,32 @@ start_process (void *file_name_)
    does nothing. */
 int process_wait (tid_t child_tid UNUSED) 
 {
-  while (true) {
-    timer_msleep(1000); // Sleep to avoid busy-waiting
+  struct thread *child = thread_get_by_tid(child_tid);
+  
+  // If child thread doesn't exist or is not our child, return -1
+  if (child == NULL) {
+    return -1;
   }
+  
+  if (child->parent_tid != thread_current()->tid) {
+    return -1;
+  }
+  
+  // If already waited on this child, return -1
+  if (child->waited) {
+    return -1;
+  }
+  
+  // Wait for child to exit
+  sema_down(&child->exit_sema);
+  
+  // Get the exit status before the child is destroyed
+  int exit_status = child->exit_status;
+  
+  // Mark that we've waited on this child so it can be freed
+  child->waited = true;
+  
+  return exit_status;
 }
 
 /* Free the current process's resources. */
@@ -124,6 +156,9 @@ process_exit (void)
     prog_name[i] = '\0';
     printf("%s: exit(%d)\n", prog_name, cur->exit_status);
   }
+
+  /* Signal the parent that this process is exiting. */
+  sema_up(&cur->exit_sema);
 
   /* Destroy the current process's page directory and switch back
      to the kernel-only page directory. */

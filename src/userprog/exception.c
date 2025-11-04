@@ -4,6 +4,7 @@
 #include "userprog/gdt.h"
 #include "threads/interrupt.h"
 #include "threads/thread.h"
+#include "threads/vaddr.h"
 
 /* Number of page faults processed. */
 static long long page_fault_cnt;
@@ -89,6 +90,7 @@ kill (struct intr_frame *f)
       printf ("%s: dying due to interrupt %#04x (%s).\n",
               thread_name (), f->vec_no, intr_name (f->vec_no));
       intr_dump_frame (f);
+      thread_current()->exit_status = -1;
       thread_exit (); 
 
     case SEL_KCSEG:
@@ -104,6 +106,7 @@ kill (struct intr_frame *f)
          kernel. */
       printf ("Interrupt %#04x (%s) in unknown segment %04x\n",
              f->vec_no, intr_name (f->vec_no), f->cs);
+      thread_current()->exit_status = -1;
       thread_exit ();
     }
 }
@@ -148,6 +151,22 @@ page_fault (struct intr_frame *f)
   write = (f->error_code & PF_W) != 0;
   user = (f->error_code & PF_U) != 0;
 
+  /* For user processes, any page fault in user space (even if CPU was in kernel
+     mode executing get_user/put_user) should terminate the process gracefully. */
+  if (!user && is_user_vaddr(fault_addr)) {
+    /* Kernel code (like get_user in syscall handler) faulted on user memory.
+       This means syscall tried to access invalid user address. Terminate gracefully. */
+    thread_current()->exit_status = -1;
+    thread_exit();
+  }
+  
+  if (user) {
+    /* User process directly accessed invalid memory. Terminate gracefully. */
+    thread_current()->exit_status = -1;
+    thread_exit();
+  }
+
+  /* Kernel-mode page fault in kernel space - this is a bug. */
   /* To implement virtual memory, delete the rest of the function
      body, and replace it with code that brings in the page to
      which fault_addr refers. */

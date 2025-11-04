@@ -268,6 +268,22 @@ thread_current (void)
   return t;
 }
 
+/* Returns the thread with the given tid, or NULL if not found. */
+struct thread *
+thread_get_by_tid (tid_t tid)
+{
+  struct list_elem *e;
+
+  for (e = list_begin (&all_list); e != list_end (&all_list);
+       e = list_next (e))
+    {
+      struct thread *t = list_entry (e, struct thread, allelem);
+      if (t->tid == tid)
+        return t;
+    }
+  return NULL;
+}
+
 /* Returns the running thread's tid. */
 tid_t
 thread_tid (void) 
@@ -464,6 +480,21 @@ init_thread (struct thread *t, const char *name, int priority)
   t->priority = priority;
   t->magic = THREAD_MAGIC;
 
+#ifdef USERPROG
+  sema_init (&t->exit_sema, 0);  /* Initially 0 so parent blocks until child exits */
+  sema_init (&t->load_sema, 0);  /* Initially 0 so parent blocks until child loads */
+  t->parent_tid = TID_ERROR;
+  t->exit_status = 0;  /* Initialize exit status to 0 */
+  t->waited = false;  /* Thread hasn't been waited on yet */
+  t->load_success = false;  /* Thread hasn't successfully loaded yet */
+  
+  /* Initialize file descriptor table */
+  int i;
+  for (i = 0; i < 128; i++) {
+    t->fd_table[i] = NULL;
+  }
+#endif
+
   old_level = intr_disable ();
   list_push_back (&all_list, &t->allelem);
   intr_set_level (old_level);
@@ -535,11 +566,23 @@ thread_schedule_tail (struct thread *prev)
      pull out the rug under itself.  (We don't free
      initial_thread because its memory was not obtained via
      palloc().) */
+#ifdef USERPROG
+  /* For user processes, only free if the parent has already waited on it */
+  if (prev != NULL && prev->status == THREAD_DYING && prev != initial_thread) 
+    {
+      ASSERT (prev != cur);
+      /* Only free if parent has waited, or this is a kernel thread (no parent) */
+      if (prev->parent_tid == TID_ERROR || prev->waited) {
+        palloc_free_page (prev);
+      }
+    }
+#else
   if (prev != NULL && prev->status == THREAD_DYING && prev != initial_thread) 
     {
       ASSERT (prev != cur);
       palloc_free_page (prev);
     }
+#endif
 }
 
 /* Schedules a new process.  At entry, interrupts must be off and

@@ -4,6 +4,7 @@
 #include <debug.h>
 #include <list.h>
 #include <stdint.h>
+#include "threads/synch.h"
 
 /* States in a thread's life cycle. */
 enum thread_status
@@ -100,6 +101,12 @@ struct thread
 
 #ifdef USERPROG
    int exit_status;                    /* Exit status for user process. */
+   tid_t parent_tid;                   /* Parent thread ID. */
+   struct semaphore exit_sema;         /* Semaphore for parent to wait on child exit. */
+   struct file *fd_table[128];         /* File descriptor table (0-1 reserved for stdin/stdout). */
+   bool waited;                        /* True if parent has waited on this child's exit. */
+   struct semaphore load_sema;         /* Semaphore for parent to wait on child load completion. */
+   bool load_success;                  /* True if child successfully loaded executable. */
 #endif
 
     /* Owned by thread.c. */
@@ -124,6 +131,7 @@ void thread_block (void);
 void thread_unblock (struct thread *);
 
 struct thread *thread_current (void);
+struct thread *thread_get_by_tid (tid_t);
 tid_t thread_tid (void);
 const char *thread_name (void);
 
